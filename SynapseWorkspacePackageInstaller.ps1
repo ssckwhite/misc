@@ -1,5 +1,5 @@
 <#
-SynapseWorkspacePackageInstaller.ps1 - v1.0 - Kevin White kevin.white@ the usual domain :)
+SynapseWorkspacePackageInstaller.ps1 - v1.1 - Kevin White kevin.white@ the usual domain :)
 
 Installs either all .whl files of a specified folder, or optionally an explicit 
 list; into a specific Azure Synapse Workspace and either one or more explicitly
@@ -25,8 +25,8 @@ Also see https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-
 
 # ====== Configuration ======
 
-$azureTenant = '163oxygen.onmicrosoft.com'
-$azureSubscription = 'HcSx-SP-NHPCognito-AmusedSkua'
+$azureTenant = 'sometenant.onmicrosoft.com'
+$azureSubscription = 'target-sub-name'
 
 # Leave null if there's only one WS and it'll automagically pick it, or explicitly name it here:
 $workspaceName = $null
@@ -49,6 +49,9 @@ $wheels = @(
 # ====== End of confg ======
 
 # ====== Basic setup ======
+# Moves the current working directory to where the script is saved, makes the above file references make a little more sensible
+$MyInvocation.MyCommand.Path | Split-Path | Push-Location
+
 Write-Progress -Activity "Setup" -Status "Collecting wheels to be installed..." -id 1 -PercentComplete 0
 if($wheels.GetType() -ne [System.Array]) { 
     # E.g. a string path was specified
@@ -60,10 +63,10 @@ if($wheels.count -lt 1) {
 }
 
 $iconWhl = [System.Char]::ConvertFromUtf32([System.Convert]::toInt32('1F4E6',16))
-Write-Output "Attempting to install the following packages: `n  $iconWhl$($wheels.Name -join "`n  $iconWhl")"
+Write-Output "Working on the following packages: `n  $iconWhl$($wheels.Name -join "`n  $iconWhl")"
 
 Write-Progress -Activity "Setup" -Status "Connecting to Azure..." -id 1 -PercentComplete 10
-if($null -eq (Get-AzContext)) { #only connect to Azure if not already connected
+if((Get-AzContext).Account.Tenants -notcontains $azureTenant) { #only connect to Azure if not already connected NEW: to the correct tenant!
     Write-Output "Connecting to Azure..."
     connect-AzAccount -Tenant $azureTenant -WarningAction SilentlyContinue | Out-Null # NB: this only silences stdout, e.g. errors will still be shown.
 }
@@ -155,3 +158,5 @@ foreach($pool in $sparkPools) {
         $progress++
     }
 }
+# Returns the CWD to what it was before running the script.
+Pop-Location
