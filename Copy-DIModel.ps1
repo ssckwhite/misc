@@ -7,10 +7,23 @@
 # Note that despite the way DI Studio presents things, models exist in a DI instance, and 
 # projects that you have created can use any model in the same instance (compatible API version
 # notwithstanding). Deleting a project does NOT delete models in the DI instance.
-#
-# As of this version, only Extraction models are implemented & tested; however uncommenting the
-# appropriate lines below *should* work well as the API seems to be insensitive to the difference.
 # 
+# Although presently out of scope, it's worth noting that DI Studio projects are stored as a
+# JSON file in the root of the SA container, named
+# 'config-{GUID of the user}-{unknown GUID}.json', and contains various metadata about the 
+# project. Similarly, the 'Share project' functionality creates a Base64-encoded JSON string
+# containing the minimal info required to replicate the configuration in DI Studio for another
+# user. As all values included in these JSON structures is known, it should be possible to
+# manually rebuild/replicate projects from one DI to another (e.g. since there is no current
+# functionality to copy projects from one DI instance to another, let alone one in a different
+# subscription on tenant), so long as the data in the SA used for the models is cloned (with 
+# the notable exception of adjusting/skipping those config JSONs).
+#
+# As of this version, only Extraction models are implemented & tested; however implementing 
+# Classification models should be fairly easy as the process is nearly identical but with
+# 'documentModel' replaced with 'classificationModel' in the URIs -- although it might not be 
+# supported as the copyTo overloads of the classificationModel API aren't documented.
+#
 # A transcript of the work done is automatically saved (or appended to) ./copy-dimodel.log .
 #
 # Note much of this created based on documentation at:
@@ -122,14 +135,18 @@ if($source_DI_instance_name) {
 }
 
 ## Get models
+$get_models_uri_versions = [ordered]@{ # https://learn.microsoft.com/en-us/rest/api/aiservices/document-models/list-models
+    '2023-07-31'         = 'formrecognizer/documentModels?api-version=2023-07-31'               #v3.1 GA
+    '2024-02-29-preview' = 'documentintelligence/documentModels?api-version=2024-02-29-preview'
+}
 $models = @()
-$classifiers = @()
+#$classifiers = @()
 foreach($instance in $selected_di_instances) {
     $keys = Get-AzCognitiveServicesAccountKey -ResourceGroupName $instance.ResourceGroupName -Name $instance.AccountName
     $auth = @{ "Ocp-Apim-Subscription-Key" = $keys.Key1 }
-    # Extraction
-    $get_models_uri = "$($instance.Endpoint)documentintelligence/documentModels?api-version=2023-10-31-preview"
-    $get_classifiers_uri = "$($instance.Endpoint)formrecognizer/documentClassifiers?api-version=2023-07-31"
+    $instance_API_version = get-DIBestAPIAvailableVersion $instance
+    ## Document/Extraction models
+    $get_models_uri = "$($instance.Endpoint)$($get_models_uri_versions[$instance_API_version])"
     Write-Debug "Trying to get models from $get_models_uri"
     $results = Invoke-RestMethod -UseBasicParsing -Method Get -Headers $auth -Uri $get_models_uri
     $models += ($results.value `
@@ -137,7 +154,8 @@ foreach($instance in $selected_di_instances) {
         | Select-Object @{label='DI Instance'; expression={$instance.AccountName}}, modelId, @{label='Created'; expression={$_.createdDateTime}}, # (previous line) filter out the prebuilt models
             apiVersion, description, @{label='Endpoint'; expression={$instance.Endpoint}}, @{label='auth'; expression={@{ "Ocp-Apim-Subscription-Key" = $keys.Key1}}} # Rename labels & add endpoint
     )
-    # Classifiers
+    ## Classification models
+    #$get_classifiers_uri = "$($instance.Endpoint)$($get_classifiers_uri_versions[$instance_API_version])"
     #Write-Debug "Trying to get models from $get_classifiers_uri"
     #$results = Invoke-RestMethod -UseBasicParsing -Method Get -Headers $auth -Uri $get_classifiers_uri
     #$classifiers += $results.value
@@ -285,7 +303,7 @@ foreach($model in $selected_models) {
             Start-Sleep -Seconds 1
             # Only update progress if it's reported
             if(-not $progress_response.percentCompleted) {
-                Write-Progress -Activity "Copying models" -Status "Starting copy; status: $($progress_response.status)" -id 2 -PercentComplete 0 -ParentId 1
+                Write-Progress -Activity "Copying model $($model.modelId)" -Status "Starting copy; status: $($progress_response.status)" -id 2 -PercentComplete 0 -ParentId 1
             } else {
                 Write-Progress -Activity "Copying model $($model.modelId)" -Status "Copying..." -id 2 -PercentComplete $progress_response.percentCompleted -ParentId 1
                 if($progress_response.percentCompleted -eq 100) {
