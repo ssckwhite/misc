@@ -1,5 +1,5 @@
 ###########################################################################
-#   Copy-DIModel.ps1    v1.0     2024-04-03    kevin.white@ssc-spc.gc.ca
+#   Copy-DIModel.ps1    v1.1     2024-08-01    kevin.white@ssc-spc.gc.ca
 ###########################################################################
 # Copies Azure Document Intelligence (DI) models from one DI resource to another, optionally
 # across Entra Tenant boundaries (the account used must have appropriate permissions in both).
@@ -126,12 +126,12 @@ if($source_tenant -notin $all_tenant_identifiers -or $dest_tenant -notin $all_te
 Set-AzContext -Tenant $source_tenant -WarningAction SilentlyContinue | Out-Null # Switch to source tenant/sub
 Set-AzContext -Subscription $source_subscriptionId | Out-Null 
 
-## Get DI instance(s)
-$di_instances = Get-AzCognitiveServicesAccount | Where-Object {$_.AccountType -eq 'FormRecognizer'}
+## Get DI instance(s) in source
+$source_di_instances = Get-AzCognitiveServicesAccount | Where-Object {$_.AccountType -eq 'FormRecognizer'}
 if($source_DI_instance_name) {
-    $selected_di_instances = $di_instances | Where-Object { $_.AccountName -eq $source_DI_instance_name }
+    $selected_di_instances = ($source_di_instances | Where-Object { $_.AccountName -eq $source_DI_instance_name } | Select-Object * -First 1)
 } else {
-    $selected_di_instances = ($di_instances | Out-GridView -PassThru -Title "Select the DI instances you'd like to scan (ctrl+click for multiple)")
+    $selected_di_instances = ($source_di_instances | Out-GridView -PassThru -Title "Select the DI instances you'd like to scan (ctrl+click for multiple)")
 }
 
 ## Get models
@@ -173,10 +173,13 @@ $selected_models = ( $models | Out-GridView -PassThru -Title "Select the Extract
 Set-AzContext -Tenant $dest_tenant -WarningAction SilentlyContinue | Out-Null # Switch to dest tenant/sub
 Set-AzContext -Subscription $dest_subscriptionId | Out-Null 
 
+## Get DI instance(s) in dest
+$dest_di_instances = Get-AzCognitiveServicesAccount | Where-Object {$_.AccountType -eq 'FormRecognizer'}
+
 if($destination_DI_instance_name) {
-    $destination_di_instance = ($di_instances | Where-Object { $_.AccountName -eq $destination_DI_instance_name } | Select-Object * -First 1)
+    $destination_di_instance = ($dest_di_instances | Where-Object { $_.AccountName -eq $destination_DI_instance_name } | Select-Object * -First 1)
 } else {
-    $destination_di_instance = ($di_instances | Out-GridView -PassThru -Title "Select the destination DI instance" | Select-Object * -First 1)
+    $destination_di_instance = ($dest_di_instances | Out-GridView -PassThru -Title "Select the destination DI instance" | Select-Object * -First 1)
 }
 
 $destination_auth = @{ "Ocp-Apim-Subscription-Key" = (Get-AzCognitiveServicesAccountKey -ResourceGroupName $destination_di_instance.ResourceGroupName -Name $destination_di_instance.AccountName).Key1 }
